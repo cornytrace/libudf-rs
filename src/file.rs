@@ -1,4 +1,5 @@
 use bitfield::BitRange;
+use nom::number::complete::*;
 use nom_derive::Nom;
 use nom_derive::Parse;
 
@@ -14,29 +15,83 @@ pub struct LBAddr {
     pub part_ref_nr: u16,
 }
 
-#[derive(Nom, Debug)]
-#[nom(LittleEndian)]
+#[derive(Debug)]
 pub struct ShortAD {
     pub len: u32,
     pub pos: LBN,
+    pub ty: u8,
+}
+impl ShortAD {
+    pub fn parse_le<'nom>(i: &'nom [u8]) -> nom::IResult<&'nom [u8], Self> {
+        let (i, len) = le_u32(i)?;
+        let (i, pos) = <_>::parse(i)?;
+        let ty: u8 = len.bit_range(31, 30);
+        let len = len.bit_range(29, 0);
+        Ok((i, Self { len, pos, ty }))
+    }
 }
 
-#[derive(Nom, Debug)]
-#[nom(LittleEndian)]
+#[derive(Debug)]
 pub struct LongAD {
     pub len: u32,
     pub loc: LBAddr,
     pub impl_use: [u8; 6],
+    pub ty: u8,
+}
+impl LongAD {
+    pub fn parse_le<'nom>(i: &'nom [u8]) -> nom::IResult<&'nom [u8], Self> {
+        let (i, len) = le_u32(i)?;
+        let (i, loc) = <_>::parse(i)?;
+        let (i, impl_use) = <_>::parse(i)?;
+        let ty: u8 = len.bit_range(31, 30);
+        let len = len.bit_range(29, 0);
+
+        Ok((
+            i,
+            Self {
+                len,
+                loc,
+                impl_use,
+                ty,
+            },
+        ))
+    }
 }
 
-#[derive(Nom, Debug)]
-#[nom(LittleEndian)]
+#[derive(Debug)]
 pub struct ExtAD {
     pub len: u32,
     pub rec_len: u32,
     pub info_len: u32,
     pub ext_loc: LBAddr,
     pub impl_use: [u8; 2],
+    pub len_ty: u8,
+    pub rec_len_ty: u8,
+}
+impl ExtAD {
+    pub fn parse_le<'nom>(i: &'nom [u8]) -> nom::IResult<&'nom [u8], Self> {
+        let (i, len) = le_u32(i)?;
+        let (i, rec_len) = le_u32(i)?;
+        let (i, info_len) = le_u32(i)?;
+        let (i, ext_loc) = <_>::parse(i)?;
+        let (i, impl_use) = <_>::parse(i)?;
+        let len_ty: u8 = len.bit_range(31, 30);
+        let len = len.bit_range(29, 0);
+        let rec_len_ty: u8 = rec_len.bit_range(31, 30);
+        let rec_len = rec_len.bit_range(29, 0);
+        Ok((
+            i,
+            Self {
+                len,
+                rec_len,
+                info_len,
+                ext_loc,
+                impl_use,
+                len_ty,
+                rec_len_ty,
+            },
+        ))
+    }
 }
 
 #[derive(Clone)]
@@ -246,7 +301,7 @@ pub enum ICBBody {
     File(FileEntry),
 }
 impl ICBBody {
-    pub fn parse<'nom>(i: &'nom [u8], selector: FileType) -> nom::IResult<&'nom [u8], Self> {
+    pub fn parse_le<'nom>(i: &'nom [u8], selector: FileType) -> nom::IResult<&'nom [u8], Self> {
         match selector {
             FileType::TE => return Ok((i, Self::Terminal())),
             FileType::UNK
@@ -274,7 +329,7 @@ impl ICBBody {
 pub struct ICB {
     pub tag: FileTag,
     pub icb_tag: ICBTag,
-    #[nom(Parse = "{ |i| ICBBody::parse(i, icb_tag.file_type) }")]
+    #[nom(Parse = "{ |i| ICBBody::parse_le(i, icb_tag.file_type) }")]
     pub body: ICBBody,
 }
 impl ICB {

@@ -130,7 +130,7 @@ impl<IO: Read + Seek> UDF<IO> {
     }
 
     pub fn get_root_dir(&mut self) -> Result<ICB, Box<dyn Error>> {
-        let fsd_ext = LongAD::parse(&self.logical_vol_desc.lv_contents_use)
+        let fsd_ext = LongAD::parse_le(&self.logical_vol_desc.lv_contents_use)
             .or(Err("error parsing FSD pointer."))?
             .1;
         let mut fsd_loc = self.part_desc.part_start + fsd_ext.loc.lbn;
