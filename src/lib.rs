@@ -14,8 +14,6 @@ use volume::*;
 
 pub const BLOCKSIZE: u64 = 2048;
 
-//pub trait IO: Read + Seek {}
-
 pub struct UDF<IO: Read + Seek> {
     io: Box<IO>,
     pub primary_vol_desc: PVD,
@@ -60,10 +58,7 @@ impl<IO: Read + Seek> UDF<IO> {
                 }
                 TagID::PVD => {
                     let pvd = PVD::parse(&buf).unwrap().1;
-                    info!(
-                        "Volume Identifier:  {}",
-                        std::str::from_utf8(&pvd.vol_ident).unwrap()
-                    );
+                    info!("Volume Identifier: {}", pvd.vol_ident);
                     o_pvd = Some(pvd);
                 }
                 TagID::PD => {
@@ -73,7 +68,7 @@ impl<IO: Read + Seek> UDF<IO> {
                         .trim_matches('\0');
                     info!("Found partition {} of type {}", pd.part_num, ident);
                     match ident {
-                        "+NSR03" => {
+                        "+NSR02" | "+NSR03" => {
                             //let phd = PHD::parse(&pd.impl_use).unwrap().1;
                         }
                         _ => {
@@ -84,10 +79,7 @@ impl<IO: Read + Seek> UDF<IO> {
                 }
                 TagID::LVD => {
                     let lvd = LVD::parse(&buf).unwrap().1;
-                    info!(
-                        "Found logical volume: {}",
-                        std::str::from_utf8(&lvd.lvid).unwrap()
-                    );
+                    info!("Found logical volume: {}", lvd.lvid);
                     o_lvd = Some(lvd);
                 }
                 _ => {}
@@ -179,7 +171,7 @@ mod tests {
     #[test]
     fn it_works() -> Result<(), Box<dyn Error>> {
         init_logger();
-        let file = File::open("/mnt/data/share/Roms/PS3/inFamous.iso").unwrap();
+        let file = File::open("./tests/test.iso").unwrap();
         let mut file = BufReader::new(file);
         let mut udf = UDF::new(&mut file)?;
         let root_icb = udf.get_root_dir()?;

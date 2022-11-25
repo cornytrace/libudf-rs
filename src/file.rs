@@ -1,13 +1,9 @@
-use std::error::Error;
-
 use bitfield::BitRange;
-use nom::error;
-use nom::IResult;
 use nom_derive::Nom;
 use nom_derive::Parse;
 
+use crate::volume::DString;
 use crate::volume::{CharSpec, RegID, Timestamp};
-use crate::UDF;
 
 pub type LBN = u32;
 
@@ -106,11 +102,11 @@ pub struct FSD {
     pub fs_num: u32,
     pub fsd_num: u32,
     pub lv_id_charset: CharSpec,
-    pub lv_id: [u8; 128],
+    pub lv_id: DString<128>,
     pub fs_charset: CharSpec,
-    pub fs_id: [u8; 32],
-    pub copyright_id: [u8; 32],
-    pub af_id: [u8; 32],
+    pub fs_id: DString<32>,
+    pub copyright_id: DString<32>,
+    pub af_id: DString<32>,
     pub root_dir_icb: LongAD,
     pub domain_id: RegID,
     pub next_extent: LongAD,

@@ -6,7 +6,11 @@
     http://www.osta.org/specs/pdf/udf260.pdf - Section 1.3.4
 */
 
-use bitflags::bitflags;
+use std::fmt::Display;
+
+use bytemuck::cast_slice;
+use nom::bytes::complete::take;
+use nom::number::complete::le_u8;
 use nom_derive::Nom;
 use nom_derive::Parse;
 
@@ -63,6 +67,45 @@ pub struct CharSpec {
     pub cs_info: [u8; 63],
 }
 
+#[derive(Clone, Debug)]
+pub struct DString<const T: usize>(String);
+impl<const T: usize> DString<T> {
+    pub fn parse_le<'nom>(i: &'nom [u8]) -> nom::IResult<&'nom [u8], Self> {
+        let (i, raw) = take(T - 1)(i)?;
+        let (i, len) = le_u8(i)?;
+        if len == 0 {
+            return Ok((i, Self(String::new())));
+        }
+        let content: String;
+        // TODO: avoid unwrap
+        match raw[0] {
+            // UCS2-BE
+            16 => {
+                content = String::from_utf16(
+                    cast_slice(&raw[1..len as usize])
+                        .iter()
+                        .map(|x| u16::from_be(*x))
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                )
+                .unwrap()
+            }
+            // Latin-1
+            8 | _ => {
+                content = std::str::from_utf8(&raw[1..len as usize])
+                    .unwrap()
+                    .to_string()
+            }
+        }
+        Ok((i, Self(content)))
+    }
+}
+impl<const T: usize> Display for DString<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /* bitflags! {
     struct RegIDFlags: u8 {
         const DIRTY = 0b00000001;
@@ -117,14 +160,14 @@ pub struct PVD {
     pub tag: Tag,
     pub vds_num: u32,
     pub pvd_num: u32,
-    pub vol_ident: [u8; 32],
+    pub vol_ident: DString<32>,
     pub vol_seq_num: u16,
     pub max_vol_seq_num: u16,
     pub ic_level: u16,
     pub max_ic_level: u16,
     pub charset: u32,
     pub max_charset: u32,
-    pub vol_set_ident: [u8; 128],
+    pub vol_set_ident: DString<128>,
     pub desc_charset: CharSpec,
     pub expl_charset: CharSpec,
     pub vol_abstract: ExtentAD,
@@ -237,7 +280,7 @@ pub struct LVD {
     pub tag: Tag,
     pub vds_num: u32,
     pub desc_charset: CharSpec,
-    pub lvid: [u8; 128],
+    pub lvid: DString<128>,
     #[nom(Verify = "*lbs as u64 == crate::BLOCKSIZE")]
     pub lbs: u32,
     pub domain_id: RegID,
