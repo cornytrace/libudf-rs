@@ -23,8 +23,8 @@ pub struct ShortAD {
 }
 impl ShortAD {
     pub fn parse_le<'nom>(i: &'nom [u8]) -> nom::IResult<&'nom [u8], Self> {
-        let (i, len) = le_u32(i)?;
-        let (i, pos) = <_>::parse(i)?;
+        let (i, len) = u32::parse_le(i)?;
+        let (i, pos) = <_>::parse_le(i)?;
         let ty: u8 = len.bit_range(31, 30);
         let len = len.bit_range(29, 0);
         Ok((i, Self { len, pos, ty }))
@@ -41,8 +41,8 @@ pub struct LongAD {
 impl LongAD {
     pub fn parse_le<'nom>(i: &'nom [u8]) -> nom::IResult<&'nom [u8], Self> {
         let (i, len) = le_u32(i)?;
-        let (i, loc) = <_>::parse(i)?;
-        let (i, impl_use) = <_>::parse(i)?;
+        let (i, loc) = <_>::parse_le(i)?;
+        let (i, impl_use) = <_>::parse_le(i)?;
         let ty: u8 = len.bit_range(31, 30);
         let len = len.bit_range(29, 0);
 
@@ -73,8 +73,8 @@ impl ExtAD {
         let (i, len) = le_u32(i)?;
         let (i, rec_len) = le_u32(i)?;
         let (i, info_len) = le_u32(i)?;
-        let (i, ext_loc) = <_>::parse(i)?;
-        let (i, impl_use) = <_>::parse(i)?;
+        let (i, ext_loc) = <_>::parse_le(i)?;
+        let (i, impl_use) = <_>::parse_le(i)?;
         let len_ty: u8 = len.bit_range(31, 30);
         let len = len.bit_range(29, 0);
         let rec_len_ty: u8 = rec_len.bit_range(31, 30);
