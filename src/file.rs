@@ -112,6 +112,21 @@ pub enum AllocDesc {
     #[nom(Selector = "AllocType::EXTENDED")]
     EXTENDED(ExtAD),
 }
+impl From<ShortAD> for AllocDesc {
+    fn from(value: ShortAD) -> Self {
+        AllocDesc::SHORT(value)
+    }
+}
+impl From<LongAD> for AllocDesc {
+    fn from(value: LongAD) -> Self {
+        AllocDesc::LONG(value)
+    }
+}
+impl From<ExtAD> for AllocDesc {
+    fn from(value: ExtAD) -> Self {
+        AllocDesc::EXTENDED(value)
+    }
+}
 
 #[derive(Nom, PartialEq, Debug)]
 #[nom(LittleEndian)]
