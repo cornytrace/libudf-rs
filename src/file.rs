@@ -211,7 +211,7 @@ pub struct FID {
     pub file_bits: u8,
     pub fid_len: u8,
     pub icb: LongAD,
-    pub impl_len: u8,
+    pub impl_len: u16,
     #[nom(Count = "impl_len")]
     pub impl_use: Vec<u8>,
     #[nom(Count = "fid_len")]
