@@ -1,10 +1,17 @@
+use std::collections::HashMap;
+use std::io::SeekFrom;
+use std::io::{Read, Seek};
+
 use bitfield::BitRange;
+use log::error;
 use nom::number::complete::*;
 use nom_derive::Nom;
 use nom_derive::Parse;
 
 use crate::volume::DString;
-use crate::volume::{CharSpec, RegID, Timestamp};
+use crate::volume::{parse_dynamic_dstring, CharSpec, RegID, Timestamp};
+use crate::BLOCKSIZE;
+use crate::UDF;
 
 pub type LBN = u32;
 
@@ -214,8 +221,8 @@ pub struct FID {
     pub impl_len: u16,
     #[nom(Count = "impl_len")]
     pub impl_use: Vec<u8>,
-    #[nom(Count = "fid_len")]
-    pub fid: Vec<u8>,
+    #[nom(Parse = "{ |i| parse_dynamic_dstring(i, fid_len) }")]
+    pub fid: String,
     #[nom(
         Count = "4 * ((fid_len as usize+impl_len as usize+38+3)/4)-(fid_len as usize+impl_len as usize+38)"
     )]
@@ -363,5 +370,57 @@ impl ICB {
             }
         }
         vec
+    }
+
+    pub fn get_fids<IO: Read + Seek>(&self, udf: &mut UDF<IO>) -> Vec<FID> {
+        let body;
+        if let ICBBody::File(file) = &self.body {
+            body = file
+        } else {
+            return Vec::new();
+        }
+        let ad = &self.get_alloc_descs()[0];
+        let (loc, _) = udf.alloc_desc_to_offset_len(&ad);
+        match self.icb_tag.strategy {
+            1 => {
+                todo!()
+            }
+            2 => {
+                todo!()
+            }
+            3 => {
+                todo!()
+            }
+            4 => {
+                let mut buf = [0 as u8; BLOCKSIZE as _];
+                udf.io.seek(SeekFrom::Start(loc as _)).unwrap();
+                udf.io.read(&mut buf).unwrap();
+                let mut res =
+                    nom::multi::count(FID::parse_le, body.file_link_count as usize + 1)(&buf)
+                        .unwrap()
+                        .1;
+                res.remove(0);
+                res
+            }
+            _ => {
+                error!("Unknown ICB strategy!");
+                Vec::new()
+            }
+        }
+    }
+
+    pub fn get_children<IO: Read + Seek>(&self, udf: &mut UDF<IO>) -> HashMap<String, ICB> {
+        self.get_fids(udf)
+            .into_iter()
+            .map(|f| {
+                let buf = udf.read_into_buf(&f.icb.into()).unwrap();
+                (f.fid, ICB::parse_le(&buf).unwrap().1)
+            })
+            .collect()
+    }
+
+    pub fn get_content<IO: Read + Seek>(&self, udf: &mut UDF<IO>) -> Vec<u8> {
+        udf.read_into_buf(&self.get_alloc_descs()[0])
+            .unwrap_or(Vec::new())
     }
 }

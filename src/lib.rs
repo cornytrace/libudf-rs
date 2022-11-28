@@ -148,7 +148,44 @@ impl<IO: Read + Seek> UDF<IO> {
         self.io.seek(SeekFrom::Start(icb_loc as u64 * BLOCKSIZE))?;
         self.io.read(&mut buf)?;
         let root_entry = ICB::parse(&buf).or(Err("error parsing root ICB"))?.1;
+
+        let root_ad = root_entry.get_alloc_descs();
+        if root_ad.len() > 1 {
+            Err("multiple allocation descriptors for one ICB not supported yet")?;
+        }
         Ok(root_entry)
+    }
+
+    pub fn alloc_desc_to_offset_len(&self, ad: &AllocDesc) -> (u32, u32) {
+        let mut loc: u32;
+        let len: u32;
+        match ad {
+            AllocDesc::SHORT(x) => {
+                loc = x.pos;
+                len = x.len;
+            }
+            AllocDesc::LONG(x) => {
+                loc = x.loc.lbn;
+                len = x.len;
+            }
+            AllocDesc::EXTENDED(x) => {
+                loc = x.ext_loc.lbn;
+                len = x.len;
+            }
+        }
+        loc += self.part_desc.part_start;
+        if let Some(meta_offset) = self.meta_file_offset {
+            loc += meta_offset;
+        }
+        (loc * BLOCKSIZE as u32, len)
+    }
+
+    pub fn read_into_buf(&mut self, ad: &AllocDesc) -> Result<Vec<u8>, Box<dyn Error>> {
+        let (loc, len) = self.alloc_desc_to_offset_len(ad);
+        let mut buf = vec![0; len as _];
+        self.io.seek(SeekFrom::Start(loc as _))?;
+        self.io.read_exact(&mut buf)?;
+        return Ok(buf);
     }
 }
 
@@ -175,7 +212,9 @@ mod tests {
         let mut file = BufReader::new(file);
         let mut udf = UDF::new(&mut file)?;
         let root_icb = udf.get_root_dir()?;
-        let _root_ad = root_icb.get_alloc_descs();
+        let c = root_icb.get_children(&mut udf);
+        let lic_udf = c.get("LICENSE.md").unwrap().get_content(&mut udf);
+        assert_eq!(lic_udf.as_slice(), include_bytes!("../LICENSE.md"));
         Ok(())
     }
 }

@@ -68,42 +68,54 @@ pub struct CharSpec {
 }
 
 #[derive(Clone, Debug)]
-pub struct DString<const T: usize>(String);
-impl<const T: usize> DString<T> {
+pub struct DString<const T: u8>(String);
+impl<const T: u8> DString<T> {
     pub fn parse_le<'nom>(i: &'nom [u8]) -> nom::IResult<&'nom [u8], Self> {
-        let (i, raw) = take(T - 1)(i)?;
+        if T == 0 {
+            return Ok((i, Self(String::new())));
+        }
+        let (i, mut s) = parse_dynamic_dstring(i, T - 1)?;
         let (i, len) = le_u8(i)?;
         if len == 0 {
             return Ok((i, Self(String::new())));
         }
-        let content: String;
-        // TODO: avoid unwrap
-        match raw[0] {
-            // UCS2-BE
-            16 => {
-                content = String::from_utf16(
-                    cast_slice(&raw[1..len as usize])
-                        .iter()
-                        .map(|x| u16::from_be(*x))
-                        .collect::<Vec<_>>()
-                        .as_slice(),
-                )
-                .unwrap()
-            }
-            // Latin-1
-            8 | _ => {
-                content = std::str::from_utf8(&raw[1..len as usize])
-                    .unwrap()
-                    .to_string()
-            }
-        }
-        Ok((i, Self(content)))
+        s.truncate(len as _);
+        Ok((i, Self(s)))
     }
 }
-impl<const T: usize> Display for DString<T> {
+impl<const T: u8> Display for DString<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
+}
+
+pub fn parse_dynamic_dstring<'nom>(i: &'nom [u8], len: u8) -> nom::IResult<&'nom [u8], String> {
+    if len == 0 {
+        return Ok((i, String::new()));
+    }
+    let (i, raw) = take(len)(i)?;
+    let content: String;
+    // TODO: avoid unwrap
+    match raw[0] {
+        // UCS2-BE
+        16 => {
+            content = String::from_utf16(
+                cast_slice(&raw[1..len as usize])
+                    .iter()
+                    .map(|x| u16::from_be(*x))
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            )
+            .unwrap()
+        }
+        // Latin-1
+        8 | _ => {
+            content = std::str::from_utf8(&raw[1..len as usize])
+                .unwrap()
+                .to_string()
+        }
+    }
+    Ok((i, content))
 }
 
 /* bitflags! {
