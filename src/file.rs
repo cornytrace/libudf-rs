@@ -15,14 +15,14 @@ use crate::UDF;
 
 pub type LBN = u32;
 
-#[derive(Nom, Debug)]
+#[derive(Nom, Debug, Clone)]
 #[nom(LittleEndian)]
 pub struct LBAddr {
     pub lbn: LBN,
     pub part_ref_nr: u16,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ShortAD {
     pub len: u32,
     pub pos: LBN,
@@ -38,7 +38,7 @@ impl ShortAD {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LongAD {
     pub len: u32,
     pub loc: LBAddr,
@@ -65,7 +65,7 @@ impl LongAD {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExtAD {
     pub len: u32,
     pub rec_len: u32,
@@ -109,7 +109,7 @@ pub enum AllocType {
     EXTENDED,
 }
 
-#[derive(Nom, Debug)]
+#[derive(Nom, Debug, Clone)]
 #[nom(LittleEndian, Selector = "AllocType")]
 pub enum AllocDesc {
     #[nom(Selector = "AllocType::SHORT")]
@@ -135,7 +135,7 @@ impl From<ExtAD> for AllocDesc {
     }
 }
 
-#[derive(Nom, PartialEq, Debug)]
+#[derive(Nom, PartialEq, Debug, Clone)]
 #[nom(LittleEndian)]
 #[repr(u16)]
 pub enum FileTagID {
@@ -153,7 +153,7 @@ pub enum FileTagID {
     EFE = 266,
 }
 
-#[derive(Nom, Debug)]
+#[derive(Nom, Debug, Clone)]
 #[nom(LittleEndian)]
 pub struct FileTag {
     pub tag_id: FileTagID,
@@ -260,7 +260,7 @@ pub enum FileType {
     METAMIRROR,
 }
 
-#[derive(Nom)]
+#[derive(Nom, Clone)]
 #[nom(LittleEndian)]
 pub struct ICBFlags {
     bits: u16,
@@ -277,7 +277,7 @@ impl ICBFlags {
     }
 }
 
-#[derive(Nom)]
+#[derive(Nom, Clone)]
 #[nom(LittleEndian)]
 pub struct ICBTag {
     pub num_prior_entries: u32,
@@ -290,7 +290,7 @@ pub struct ICBTag {
     pub flags: ICBFlags, // TODO: functions
 }
 
-#[derive(Nom)]
+#[derive(Nom, Clone)]
 #[nom(LittleEndian)]
 pub struct FileEntry {
     pub uid: u32,
@@ -317,6 +317,7 @@ pub struct FileEntry {
     pub alloc_descs: Vec<u8>,
 }
 
+#[derive(Clone)]
 pub enum ICBBody {
     Indirect(LongAD),
     Terminal(),
@@ -346,7 +347,7 @@ impl ICBBody {
     }
 }
 
-#[derive(Nom)]
+#[derive(Nom, Clone)]
 #[nom(LittleEndian)]
 pub struct ICB {
     pub tag: FileTag,
@@ -372,6 +373,8 @@ impl ICB {
         vec
     }
 
+    /// gets all File Identifier Descriptors corresponding to this ICB
+    /// the first icb returned will be the FID belonging to the ICB itself
     pub fn get_fids<IO: Read + Seek>(&self, udf: &mut UDF<IO>) -> Vec<FID> {
         let body;
         if let ICBBody::File(file) = &self.body {
@@ -399,7 +402,6 @@ impl ICB {
                     nom::multi::count(FID::parse_le, body.file_link_count as usize + 1)(&buf)
                         .unwrap()
                         .1;
-                res.remove(0);
                 res
             }
             _ => {
@@ -412,6 +414,7 @@ impl ICB {
     pub fn get_children<IO: Read + Seek>(&self, udf: &mut UDF<IO>) -> HashMap<String, ICB> {
         self.get_fids(udf)
             .into_iter()
+            .skip(1) // Skip the FID belonging to ourselves
             .map(|f| {
                 let buf = udf.read_into_buf(&f.icb.into()).unwrap();
                 (f.fid, ICB::parse_le(&buf).unwrap().1)

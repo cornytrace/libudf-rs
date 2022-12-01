@@ -6,7 +6,8 @@ use log::{info, warn};
 use nom_derive::Parse;
 use std::{
     error::Error,
-    io::{Read, Seek, SeekFrom},
+    io::{ErrorKind, Read, Seek, SeekFrom},
+    path::{Component, Path},
 };
 
 use file::*;
@@ -20,6 +21,7 @@ pub struct UDF<IO: Read + Seek> {
     pub part_desc: PD,
     pub logical_vol_desc: LVD,
     meta_file_offset: Option<u32>,
+    root_icb: Option<ICB>,
 }
 
 impl<IO: Read + Seek> UDF<IO> {
@@ -120,16 +122,21 @@ impl<IO: Read + Seek> UDF<IO> {
             }
         }
 
-        Ok(Self {
+        let result = Self {
             io: Box::new(io),
             primary_vol_desc: pvd,
             part_desc: pd,
             logical_vol_desc: lvd,
             meta_file_offset: metadata_offset,
-        })
+            root_icb: None,
+        };
+        Ok(result)
     }
 
     pub fn get_root_dir(&mut self) -> Result<ICB, Box<dyn Error>> {
+        if let Some(root_icb) = self.root_icb.clone() {
+            return Ok(root_icb);
+        }
         let fsd_ext = LongAD::parse_le(&self.logical_vol_desc.lv_contents_use)
             .or(Err("error parsing FSD pointer."))?
             .1;
@@ -153,7 +160,8 @@ impl<IO: Read + Seek> UDF<IO> {
         if root_ad.len() > 1 {
             Err("multiple allocation descriptors for one ICB not supported yet")?;
         }
-        Ok(root_entry)
+        self.root_icb = Some(root_entry);
+        Ok(self.root_icb.clone().unwrap())
     }
 
     pub fn alloc_desc_to_offset_len(&self, ad: &AllocDesc) -> (u32, u32) {
@@ -187,6 +195,53 @@ impl<IO: Read + Seek> UDF<IO> {
         self.io.read_exact(&mut buf)?;
         return Ok(buf);
     }
+
+    pub fn find_icb(&mut self, path: &Path) -> Result<ICB, Box<dyn Error>> {
+        if !path.is_absolute() {
+            return Err(Box::new(std::io::Error::new(
+                ErrorKind::InvalidInput,
+                "path must be absolute",
+            )));
+        }
+        let mut cur_icb: ICB = self.get_root_dir()?;
+        let mut prev_icb: Vec<ICB> = Vec::with_capacity(path.components().count());
+        for p in path.components() {
+            // TODO: Handle ParentDir with symbolic links
+            match p {
+                Component::Prefix(_) => {
+                    return Err(Box::new(std::io::Error::new(
+                        ErrorKind::InvalidInput,
+                        "path must not contain prefix",
+                    )))
+                }
+                Component::CurDir => {
+                    continue;
+                }
+                Component::RootDir => {
+                    cur_icb = self.get_root_dir()?;
+                    prev_icb.clear();
+                }
+                Component::ParentDir => {
+                    cur_icb = prev_icb.pop().ok_or_else(|| {
+                        Box::new(std::io::Error::new(
+                            ErrorKind::InvalidInput,
+                            "path tried to go above root directory",
+                        ))
+                    })?;
+                }
+                Component::Normal(p) => {
+                    let c = cur_icb.get_children(self).remove(p.to_str().unwrap());
+                    if let Some(c) = c {
+                        prev_icb.push(cur_icb);
+                        cur_icb = c;
+                    } else {
+                        return Err(Box::new(std::io::Error::from(ErrorKind::NotFound)));
+                    }
+                }
+            }
+        }
+        Ok(cur_icb)
+    }
 }
 
 #[cfg(test)]
@@ -206,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn it_works() -> Result<(), Box<dyn Error>> {
+    fn get_file_contents() -> Result<(), Box<dyn Error>> {
         init_logger();
         let file = File::open("./tests/test.iso").unwrap();
         let mut file = BufReader::new(file);
@@ -215,6 +270,16 @@ mod tests {
         let c = root_icb.get_children(&mut udf);
         let lic_udf = c.get("LICENSE.md").unwrap().get_content(&mut udf);
         assert_eq!(lic_udf.as_slice(), include_bytes!("../LICENSE.md"));
+        Ok(())
+    }
+
+    #[test]
+    fn find_file_icb() -> Result<(), Box<dyn Error>> {
+        init_logger();
+        let file = File::open("./tests/test.iso").unwrap();
+        let mut file = BufReader::new(file);
+        let mut udf = UDF::new(&mut file)?;
+        let _file_icb = udf.find_icb(&Path::new("/LICENSE.md"))?;
         Ok(())
     }
 }
